@@ -14,6 +14,23 @@ type VectorStore interface {
 	SimilaritySearch(ctx context.Context, query string, numDocuments int, options ...Option) ([]schema.Document, error) //nolint:lll
 }
 
+// IndexableVectorStore extends VectorStore with deletion capabilities.
+// This interface is temporary and exists to maintain backward compatibility
+// during the transition period where not all vector stores support document deletion.
+//
+// The indexing API requires stores to support document deletion for proper
+// index maintenance and updates. In future versions, this functionality
+// will be merged into the base VectorStore interface, making all vector stores
+// support document deletion by default.
+//
+// Deprecation Notice:
+// This interface will be removed once all vector stores implement DeleteDocuments.
+// All vector stores should support document deletion and implement VectorStore in the future
+type IndexableVectorStore interface {
+	VectorStore
+	DeleteDocuments(ctx context.Context, ids []string, opts ...Option) ([]string, error)
+}
+
 // Retriever is a retriever for vector stores.
 type Retriever struct {
 	CallbacksHandler callbacks.Handler
