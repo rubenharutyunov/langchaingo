@@ -1,14 +1,12 @@
 package opensearch_test
 
 import (
+	"bytes"
 	"context"
-	"os"
-	"strings"
-	"testing"
-	"time"
-
+	"fmt"
 	"github.com/google/uuid"
 	opensearchgo "github.com/opensearch-project/opensearch-go"
+	"github.com/opensearch-project/opensearch-go/opensearchapi"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tcopensearch "github.com/testcontainers/testcontainers-go/modules/opensearch"
@@ -18,6 +16,12 @@ import (
 	"github.com/tmc/langchaingo/schema"
 	"github.com/tmc/langchaingo/vectorstores"
 	"github.com/tmc/langchaingo/vectorstores/opensearch"
+	"io"
+	"os"
+	"strings"
+	"testing"
+
+	huggingfaceembedding "github.com/tmc/langchaingo/embeddings/huggingface"
 )
 
 func getEnvVariables(t *testing.T) (string, string, string) {
@@ -73,7 +77,7 @@ func getEnvVariables(t *testing.T) (string, string, string) {
 
 func setIndex(t *testing.T, storer opensearch.Store, indexName string) {
 	t.Helper()
-	_, err := storer.CreateIndex(context.TODO(), indexName)
+	_, err := storer.CreateIndex(context.TODO(), indexName, SetVectorDimension(384))
 	if err != nil {
 		t.Fatalf("error creating index: %v\n", err)
 	}
@@ -133,9 +137,10 @@ func TestOpensearchStoreRest(t *testing.T) {
 	llm := setLLM(t)
 	e, err := embeddings.NewEmbedder(llm)
 	require.NoError(t, err)
+	client := setOpensearchClient(t, opensearchEndpoint, opensearchUser, opensearchPassword)
 
 	storer, err := opensearch.New(
-		setOpensearchClient(t, opensearchEndpoint, opensearchUser, opensearchPassword),
+		client,
 		opensearch.WithEmbedder(e),
 	)
 	require.NoError(t, err)
@@ -148,7 +153,10 @@ func TestOpensearchStoreRest(t *testing.T) {
 		{PageContent: "potato"},
 	}, vectorstores.WithNameSpace(indexName))
 	require.NoError(t, err)
-	time.Sleep(time.Second)
+	// Refresh the index to make documents immediately searchable. Better than time.Sleep()
+	res, err := client.Indices.Refresh(client.Indices.Refresh.WithIndex(indexName))
+	require.NoError(t, err)
+	defer res.Body.Close()
 	docs, err := storer.SimilaritySearch(context.Background(), "japan", 1, vectorstores.WithNameSpace(indexName))
 	require.NoError(t, err)
 	require.Len(t, docs, 1)
@@ -159,13 +167,13 @@ func TestOpensearchStoreRestWithScoreThreshold(t *testing.T) {
 	t.Parallel()
 	opensearchEndpoint, opensearchUser, opensearchPassword := getEnvVariables(t)
 	indexName := uuid.New().String()
-
+	client := setOpensearchClient(t, opensearchEndpoint, opensearchUser, opensearchPassword)
 	llm := setLLM(t)
 	e, err := embeddings.NewEmbedder(llm)
 	require.NoError(t, err)
 
 	storer, err := opensearch.New(
-		setOpensearchClient(t, opensearchEndpoint, opensearchUser, opensearchPassword),
+		client,
 		opensearch.WithEmbedder(e),
 	)
 	require.NoError(t, err)
@@ -186,7 +194,10 @@ func TestOpensearchStoreRestWithScoreThreshold(t *testing.T) {
 		{PageContent: "New York"},
 	}, vectorstores.WithNameSpace(indexName))
 	require.NoError(t, err)
-	time.Sleep(time.Second)
+	// Refresh the index to make documents immediately searchable. Better than time.Sleep()
+	res, err := client.Indices.Refresh(client.Indices.Refresh.WithIndex(indexName))
+	require.NoError(t, err)
+	defer res.Body.Close()
 	// test with a score threshold of 0.72, expected 6 documents
 	docs, err := storer.SimilaritySearch(context.Background(),
 		"Which of these are cities in Japan", 10,
@@ -200,13 +211,14 @@ func TestOpensearchAsRetriever(t *testing.T) {
 	t.Parallel()
 	opensearchEndpoint, opensearchUser, opensearchPassword := getEnvVariables(t)
 	indexName := uuid.New().String()
+	client := setOpensearchClient(t, opensearchEndpoint, opensearchUser, opensearchPassword)
 
 	llm := setLLM(t)
 	e, err := embeddings.NewEmbedder(llm)
 	require.NoError(t, err)
 
 	storer, err := opensearch.New(
-		setOpensearchClient(t, opensearchEndpoint, opensearchUser, opensearchPassword),
+		client,
 		opensearch.WithEmbedder(e),
 	)
 	require.NoError(t, err)
@@ -225,7 +237,10 @@ func TestOpensearchAsRetriever(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	time.Sleep(time.Second)
+	// Refresh the index to make documents immediately searchable. Better than time.Sleep()
+	res, err := client.Indices.Refresh(client.Indices.Refresh.WithIndex(indexName))
+	require.NoError(t, err)
+	defer res.Body.Close()
 
 	result, err := chains.Run(
 		context.TODO(),
@@ -243,13 +258,14 @@ func TestOpensearchAsRetrieverWithScoreThreshold(t *testing.T) {
 	t.Parallel()
 	opensearchEndpoint, opensearchUser, opensearchPassword := getEnvVariables(t)
 	indexName := uuid.New().String()
+	client := setOpensearchClient(t, opensearchEndpoint, opensearchUser, opensearchPassword)
 
 	llm := setLLM(t)
 	e, err := embeddings.NewEmbedder(llm)
 	require.NoError(t, err)
 
 	storer, err := opensearch.New(
-		setOpensearchClient(t, opensearchEndpoint, opensearchUser, opensearchPassword),
+		client,
 		opensearch.WithEmbedder(e),
 	)
 	require.NoError(t, err)
@@ -269,7 +285,12 @@ func TestOpensearchAsRetrieverWithScoreThreshold(t *testing.T) {
 		vectorstores.WithNameSpace(indexName),
 	)
 	require.NoError(t, err)
-	time.Sleep(time.Second)
+
+	// Refresh the index to make documents immediately searchable. Better than time.Sleep()
+	res, err := client.Indices.Refresh(client.Indices.Refresh.WithIndex(indexName))
+	require.NoError(t, err)
+	defer res.Body.Close()
+
 	result, err := chains.Run(
 		context.TODO(),
 		chains.NewRetrievalQAFromLLM(
@@ -284,4 +305,73 @@ func TestOpensearchAsRetrieverWithScoreThreshold(t *testing.T) {
 
 	require.Contains(t, result, "black", "expected black in result")
 	require.Contains(t, result, "beige", "expected beige in result")
+}
+
+func TestOpensearchDeleteDocuments(t *testing.T) {
+	t.Parallel()
+	opensearchEndpoint, opensearchUser, opensearchPassword := getEnvVariables(t)
+	indexName := uuid.New().String()
+
+	client := setOpensearchClient(t, opensearchEndpoint, opensearchUser, opensearchPassword)
+	// TODO: Change this to OpenAI
+	huggingfaceEmbedder, err := huggingfaceembedding.NewHuggingface(huggingfaceembedding.WithModel("sentence-transformers/all-MiniLM-L12-v2"))
+	storer, _ := opensearch.New(client, opensearch.WithEmbedder(huggingfaceEmbedder))
+	require.NoError(t, err)
+
+	setIndex(t, storer, indexName)
+	defer removeIndex(t, storer, indexName)
+
+	_, err = storer.AddDocuments(
+		context.Background(),
+		[]schema.Document{
+			{Metadata: map[string]interface{}{"id": "1"}, PageContent: "The color of the house is blue."},
+			{Metadata: map[string]interface{}{"id": "2"}, PageContent: "The color of the car is red."},
+			{Metadata: map[string]interface{}{"id": "3"}, PageContent: "The color of the desk is orange."},
+			{Metadata: map[string]interface{}{}, PageContent: "The color of the desk is black."},
+		},
+		vectorstores.WithNameSpace(indexName),
+	)
+	require.NoError(t, err)
+
+	// Refresh the index to make documents immediately searchable. Better than time.Sleep()
+	res, err := client.Indices.Refresh(client.Indices.Refresh.WithIndex(indexName))
+	require.NoError(t, err)
+	defer res.Body.Close()
+	require.NoError(t, err)
+
+	toDelete := []string{"1", "2"}
+	deletedIDs, err := storer.DeleteDocuments(
+		context.Background(),
+		toDelete,
+		vectorstores.WithNameSpace(indexName),
+	)
+	require.NoError(t, err)
+	require.ElementsMatch(t, toDelete, deletedIDs, "Deleted document IDs should match requested IDs")
+
+	res, err = client.Indices.Refresh(client.Indices.Refresh.WithIndex(indexName))
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	searchRequest := opensearchapi.SearchRequest{
+		Index: []string{indexName},
+		Body:  bytes.NewReader([]byte(`{"query": {"match_all": {}}}`)),
+	}
+	res, err = searchRequest.Do(context.Background(), client)
+	require.NoError(t, err)
+	defer res.Body.Close()
+	bodyBytes, err := io.ReadAll(res.Body) // Reads the body entirely
+	require.NoError(t, err)
+	body := string(bodyBytes)
+	fmt.Println(body)
+	require.NotContains(t, body, `"_id":"1"`, "Document ID 1 should be deleted")
+	require.NotContains(t, body, `"_id":"2"`, "Document ID 2 should be deleted")
+	require.Contains(t, body, `"_id":"3"`, "Document ID 3 should not be deleted")
+	require.Contains(t, body, `"value":2`, "Should return 2 documents")
+}
+
+// TODO: Remove this
+func SetVectorDimension(dimension int) opensearch.IndexOption {
+	return func(indexMap *map[string]interface{}) {
+		(*indexMap)["mappings"].(map[string]interface{})["properties"].(map[string]interface{})["contentVector"].(map[string]interface{})["dimension"] = dimension
+	}
 }
