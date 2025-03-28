@@ -3,7 +3,7 @@ package opensearch_test
 import (
 	"bytes"
 	"context"
-	"fmt"
+	"encoding/json"
 	"github.com/google/uuid"
 	opensearchgo "github.com/opensearch-project/opensearch-go"
 	"github.com/opensearch-project/opensearch-go/opensearchapi"
@@ -23,6 +23,18 @@ import (
 
 	huggingfaceembedding "github.com/tmc/langchaingo/embeddings/huggingface"
 )
+
+type openSearchResponse struct {
+	Hits struct {
+		Total struct {
+			Value int `json:"value"`
+		} `json:"total"`
+		Hits []struct {
+			ID     string                 `json:"_id"`
+			Source map[string]interface{} `json:"_source"`
+		} `json:"hits"`
+	} `json:"hits"`
+}
 
 func getEnvVariables(t *testing.T) (string, string, string) {
 	t.Helper()
@@ -356,17 +368,26 @@ func TestOpensearchDeleteDocuments(t *testing.T) {
 		Index: []string{indexName},
 		Body:  bytes.NewReader([]byte(`{"query": {"match_all": {}}}`)),
 	}
+
+	var response openSearchResponse
 	res, err = searchRequest.Do(context.Background(), client)
 	require.NoError(t, err)
 	defer res.Body.Close()
-	bodyBytes, err := io.ReadAll(res.Body) // Reads the body entirely
+
+	bodyBytes, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
-	body := string(bodyBytes)
-	fmt.Println(body)
-	require.NotContains(t, body, `"_id":"1"`, "Document ID 1 should be deleted")
-	require.NotContains(t, body, `"_id":"2"`, "Document ID 2 should be deleted")
-	require.Contains(t, body, `"_id":"3"`, "Document ID 3 should not be deleted")
-	require.Contains(t, body, `"value":2`, "Should return 2 documents")
+	err = json.Unmarshal(bodyBytes, &response)
+	require.NoError(t, err)
+
+	var ids []string
+	for _, hit := range response.Hits.Hits {
+		ids = append(ids, hit.ID)
+	}
+
+	require.Equal(t, response.Hits.Total.Value, 2, "Should return 2 documents")
+	require.NotContains(t, ids, "1", "Document ID 1 should be deleted")
+	require.NotContains(t, ids, "2", "Document ID 2 should be deleted")
+	require.Contains(t, ids, "3", "Document ID 3 should not be deleted")
 }
 
 // TODO: Remove this
