@@ -76,6 +76,9 @@ func (s Store) AddDocuments(
 
 	for i, doc := range docs {
 		id := uuid.NewString()
+		if idFromMetadata, ok := doc.Metadata["id"]; ok {
+			id = idFromMetadata.(string)
+		}
 		_, err := s.documentIndexing(ctx, id, opts.NameSpace, doc.PageContent, vectors[i], doc.Metadata)
 		if err != nil {
 			return ids, err
@@ -150,4 +153,61 @@ func (s Store) SimilaritySearch(
 	}
 
 	return output, nil
+}
+
+// DeleteDocuments removes documents with the specified IDs from the OpenSearch index.
+// It returns the IDs of successfully deleted documents.
+func (s Store) DeleteDocuments(ctx context.Context, ids []string, opts ...vectorstores.Option) ([]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	options := s.getOptions(opts...)
+	deletedIDs := make([]string, 0, len(ids))
+
+	var buf bytes.Buffer
+	for _, id := range ids {
+		deleteAction := map[string]interface{}{
+			"delete": map[string]interface{}{
+				"_index": options.NameSpace,
+				"_id":    id,
+			},
+		}
+
+		if err := json.NewEncoder(&buf).Encode(deleteAction); err != nil {
+			return deletedIDs, fmt.Errorf("error encoding delete action: %w", err)
+		}
+	}
+
+	req := opensearchapi.BulkRequest{
+		Body: bytes.NewReader(buf.Bytes()),
+	}
+
+	res, err := req.Do(ctx, s.client)
+	if err != nil {
+		return deletedIDs, fmt.Errorf("bulk delete request failed: %w", err)
+	}
+	defer res.Body.Close()
+
+	var bulkResponse struct {
+		Items []struct {
+			Delete struct {
+				ID     string                 `json:"_id"`
+				Status int                    `json:"status"`
+				Error  map[string]interface{} `json:"error,omitempty"`
+			} `json:"delete"`
+		} `json:"items"`
+	}
+
+	if err := json.NewDecoder(res.Body).Decode(&bulkResponse); err != nil {
+		return deletedIDs, fmt.Errorf("error parsing bulk response: %w", err)
+	}
+
+	for _, item := range bulkResponse.Items {
+		if item.Delete.Status == 200 || item.Delete.Status == 404 {
+			deletedIDs = append(deletedIDs, item.Delete.ID)
+		}
+	}
+
+	return deletedIDs, nil
 }
