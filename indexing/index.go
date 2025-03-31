@@ -204,16 +204,15 @@ func Index(
 
 			// Delete from vector store
 			if len(uidsToDelete) > 0 {
-				ids, err := deleteDocuments(destination, uidsToDelete)
+				ids, err := deleteDocuments(destination, uidsToDelete, namespace)
 				if err != nil {
 					return indexingResult, errors.New("failed to delete documents from vector store")
 				}
-				fmt.Println("Deleted documents: ", *ids)
 				err = recordManager.DeleteKeys(uidsToDelete)
 				if err != nil {
 					return Result{}, err
 				}
-				indexingResult.NumDeleted += len(uidsToDelete)
+				indexingResult.NumDeleted += len(*ids)
 			}
 		}
 	}
@@ -228,36 +227,28 @@ func Index(
 			if err != nil {
 				return indexingResult, fmt.Errorf("failed to list keys in record manager: %w", err)
 			}
-			for _, uid := range uidsToDelete {
-				for _, doc := range docsSource {
-					if doc.Metadata["id"] == *uid {
-						fmt.Println("Deleting document: ", doc.PageContent)
-					}
-				}
-			}
+
 			if len(uidsToDelete) == 0 {
 				break
 			}
 
-			ids, err := deleteDocuments(destination, uidsToDelete)
+			ids, err := deleteDocuments(destination, uidsToDelete, namespace)
 			if err != nil {
 				return indexingResult, fmt.Errorf("failed to delete documents from vector store: %w", err)
 			}
-			fmt.Println("Deleted documents: ", *ids)
 			recordManager.DeleteKeys(uidsToDelete)
-			indexingResult.NumDeleted += len(uidsToDelete)
+			indexingResult.NumDeleted += len(*ids)
 		}
 	}
 	return indexingResult, nil
 }
 
-func deleteDocuments(destination vectorstores.IndexableVectorStore, uidsToDelete []*string) (*[]string, error) {
+func deleteDocuments(destination vectorstores.IndexableVectorStore, uidsToDelete []*string, namespace vectorstores.Option) (*[]string, error) {
 	ids := make([]string, len(uidsToDelete))
 	for i, uid := range uidsToDelete {
 		ids[i] = *uid
 	}
-	fmt.Println("Deleting documents: ", ids)
-	ids, err := destination.DeleteDocuments(context.Background(), ids)
+	ids, err := destination.DeleteDocuments(context.Background(), ids, namespace)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete documents (%v) from vector store: %w", ids, err)
 	}
