@@ -203,6 +203,8 @@ func (s Store) DeleteDocuments(ctx context.Context, ids []string, opts ...vector
 		return deletedIDs, fmt.Errorf("error parsing bulk response: %w", err)
 	}
 
+	fmt.Println(bulkResponse)
+
 	for _, item := range bulkResponse.Items {
 		if item.Delete.Status == 200 || item.Delete.Status == 404 {
 			deletedIDs = append(deletedIDs, item.Delete.ID)
