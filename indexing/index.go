@@ -220,6 +220,8 @@ func Index(
 		var deleteGroupIds []*string
 		if options.cleanup == ScopedFull {
 			deleteGroupIds = scopedFullCleanupSourceIdsToSlice(scopedFullCleanupSourceIds)
+		} else {
+			deleteGroupIds = nil
 		}
 
 		for {
