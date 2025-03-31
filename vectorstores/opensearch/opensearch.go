@@ -206,7 +206,7 @@ func (s Store) DeleteDocuments(ctx context.Context, ids []string, opts ...vector
 	fmt.Println(bulkResponse)
 
 	for _, item := range bulkResponse.Items {
-		if item.Delete.Status == 200 || item.Delete.Status == 404 {
+		if item.Delete.Status == 200 {
 			deletedIDs = append(deletedIDs, item.Delete.ID)
 		}
 	}
