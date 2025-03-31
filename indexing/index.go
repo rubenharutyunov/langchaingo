@@ -238,10 +238,11 @@ func Index(
 				break
 			}
 
-			err = deleteDocuments(destination, uidsToDelete)
+			ids, err := deleteDocuments(destination, uidsToDelete)
 			if err != nil {
 				return indexingResult, fmt.Errorf("failed to delete documents from vector store: %w", err)
 			}
+			fmt.Println("Deleted documents: ", *ids)
 			recordManager.DeleteKeys(uidsToDelete)
 			indexingResult.NumDeleted += len(uidsToDelete)
 		}
@@ -249,17 +250,17 @@ func Index(
 	return indexingResult, nil
 }
 
-func deleteDocuments(destination vectorstores.IndexableVectorStore, uidsToDelete []*string) error {
+func deleteDocuments(destination vectorstores.IndexableVectorStore, uidsToDelete []*string) (*[]string, error) {
 	ids := make([]string, len(uidsToDelete))
 	for i, uid := range uidsToDelete {
 		ids[i] = *uid
 	}
-
+	fmt.Println("Deleting documents: ", ids)
 	ids, err := destination.DeleteDocuments(context.Background(), ids)
 	if err != nil {
-		return fmt.Errorf("failed to delete documents (%v) from vector store: %w", ids, err)
+		return nil, fmt.Errorf("failed to delete documents (%v) from vector store: %w", ids, err)
 	}
-	return nil
+	return &ids, nil
 }
 
 func scopedFullCleanupSourceIdsToSlice(scopedFullCleanupSourceIds map[string]bool) []*string {
