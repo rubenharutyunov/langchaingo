@@ -204,10 +204,11 @@ func Index(
 
 			// Delete from vector store
 			if len(uidsToDelete) > 0 {
-				err := deleteDocuments(destination, uidsToDelete)
+				ids, err := deleteDocuments(destination, uidsToDelete)
 				if err != nil {
 					return indexingResult, errors.New("failed to delete documents from vector store")
 				}
+				fmt.Println("Deleted documents: ", *ids)
 				err = recordManager.DeleteKeys(uidsToDelete)
 				if err != nil {
 					return Result{}, err
