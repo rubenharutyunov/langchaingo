@@ -208,6 +208,8 @@ func (s Store) DeleteDocuments(ctx context.Context, ids []string, opts ...vector
 	for _, item := range bulkResponse.Items {
 		if item.Delete.Status == 200 {
 			deletedIDs = append(deletedIDs, item.Delete.ID)
+		} else {
+			return deletedIDs, fmt.Errorf("error deleting document: %v", item.Delete.Error)
 		}
 	}
 
