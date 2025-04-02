@@ -210,6 +210,28 @@ func TestIndex(t *testing.T) {
 			},
 		},
 		{
+			name: "full cleanup with single source",
+			docs: []schema.Document{
+				{PageContent: "doc3", Metadata: map[string]any{"source": "source1"}},
+				{PageContent: "doc4", Metadata: map[string]any{"source": "source1"}},
+			},
+			existingDocs: []schema.Document{
+				{PageContent: "doc1", Metadata: map[string]any{"source": "source1"}},
+				{PageContent: "doc2", Metadata: map[string]any{"source": "source1"}},
+			},
+			opts: []Option{
+				WithCleanup(Full),
+				WithSourceIdKey("source"),
+				WithCleanupBatchSize(1),
+			},
+			expectedNumAdded:   2,
+			expectedNumDeleted: 2,
+			expectedFinalDocs: []schema.Document{
+				{PageContent: "doc3", Metadata: map[string]any{"source": "source1"}},
+				{PageContent: "doc4", Metadata: map[string]any{"source": "source1"}},
+			},
+		},
+		{
 			name: "scoped full cleanup",
 			docs: []schema.Document{
 				{PageContent: "new1", Metadata: map[string]any{"source": "source1"}},

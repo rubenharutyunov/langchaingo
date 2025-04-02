@@ -182,7 +182,7 @@ func Index(
 				docsToIndex,
 				namespace)
 			if err != nil {
-				return indexingResult, fmt.Errorf("failed to add documents with IDs %v", ids)
+				return indexingResult, fmt.Errorf("failed to add documents with IDs %v: %v", ids, err)
 			}
 			indexingResult.NumAdded += len(docsToIndex) - len(uidsToUpdate)
 			indexingResult.NumUpdated += len(uidsToUpdate)
